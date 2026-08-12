@@ -223,9 +223,9 @@ You should also verify:
 
 ### Do Not Commit Wi-Fi Credentials
 
-If this repository is public, **do not commit your real Wi-Fi password**.
+This repository is public, **do not commit your real Wi-Fi password**.
 
-Consider keeping credentials in a separate untracked configuration/secrets file or replacing them with placeholders before pushing the repository to GitHub.
+Consider keeping credentials in a separate untracked configuration/secrets file or replacing them with placeholders before pushing any repository/fork to GitHub.
 
 ---
 
@@ -286,7 +286,7 @@ Never rely solely on software to protect equipment from an unsafe electrical or 
 
 ## Authorship & AI Assistance
 
-**PicoThermostat was developed by Nick.**
+**PicoThermostat was developed by Nick Germann.**
 
 The project architecture, hardware integration, HVAC control behavior, safety logic, and implementation decisions were developed as part of a personal embedded-systems project.
 
