@@ -21,6 +21,11 @@ _thread.start_new_thread(web_server.run_web_server, ())
 
 # start watch dog
 #wdt = WDT(timeout = 8000)
+# watch dog can cause issues while debugging.
+# Communication between the device and the IDE
+# can be interrupted without activating the 
+# watch dog. Best practice seems to be debug without
+# watch dog and implement watch dog when running.
 
 #start while true loop
 while True:
