@@ -388,18 +388,17 @@ Never rely solely on software to protect equipment from an unsafe electrical or 
 
 **PicoThermostat was developed by Nick Germann.**
 
-The project architecture, hardware integration, HVAC control behavior, safety logic, and implementation decisions were developed as part of a personal embedded-systems project.
+The project architecture, hardware integration, HVAC control behavior, safety logic, and implementation decisions were developed and written as part of a personal embedded-systems project.
 
 AI tools were used as a development aid for:
 
 * Code review
 * Debugging
 * Identifying implementation errors
-* Discussing control-flow and concurrency issues
 * Assisting with development and refinement of the `web_server.py` interface
 * Documentation and comment cleanup
 
-The project was iteratively reviewed, modified, and tested by the author rather than being produced as a fully AI-generated codebase.
+The project was iteratively reviewed, modified, and tested by the author rather than being produced as AI-generated codebase.
 
 ---
 
