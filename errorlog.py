@@ -1,61 +1,30 @@
 import sys
-import time
+import io
 
-MAX_ERRORS = 50
-LOG_FILE = "error_log.txt"
-SEPARATOR = "\n---ERROR---\n"
+from logger import Logger
 
-class ErrorLogger:
-    def __init__(self, filename=LOG_FILE, max_errors=MAX_ERRORS):
-        self.filename = filename
-        self.max_errors = max_errors
+class ErrorLogger(Logger):
+    def __init__(self):
+        super().__init__(
+            max_entries=50,
+            filename = "ErrorLog.txt",
+            separator = "\n___ERROR___\n"
+            )
 
     def log(self, source, error):
-        try:
-            # Read existing log entries
-            try:
-                with open(self.filename, "r") as file:
-                    contents = file.read()
-            except OSError:
-                contents = ""
+        message = ""
 
-            # Split the file into errors
-            if contents:
-                entries = contents.split(SEPARATOR)
-            else:
-                entries = []
+        if isinstance(error, Exception):
+            buffer = io.StringIO()
+            sys.print_exception(error, buffer)
+            message = "{}: {}\n".format(
+                  source,
+                  buffer.getvalue()
+                  )
+        else:
+            message = "{}: {}\n".format(
+                source, error)
 
-            if len(entries) >= self.max_errors:
-                entries = entries[-(self.max_errors -1):]
-
-            with open(self.filename, "w") as file:
-                for entry in entries:
-                    if entry.strip():
-                        file.write(entry)
-                        file.write(SEPARATOR)
-                uptime = time.ticks_ms() // 1000
-                if isinstance(error, Exception):
-                    file.write(
-                        "[{}sec] {}:\n".format(uptime, source)
-                    )
-                    sys.print_exception(error, file)
-                else:
-                    file.write(
-                        "[{} sec] {}: {}\n".format(
-                            uptime, source, error
-                        )
-                    )
-
-        except Exception:
-            # Don't crash it on error logging
-            pass
-
-    def read(self):
-        try:
-            with open(self.filename, "r") as file:
-                return file.read()
-        except OSError:
-            return ""
-
+        super().log(message)
 
 logger = ErrorLogger()

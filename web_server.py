@@ -1,4 +1,6 @@
+import ntptime
 import network
+import os
 import socket
 import time
 
@@ -28,6 +30,7 @@ def run_web_server():
 
 def server_session():
     wlan = connect_wifi()
+    sync_time()
 
     address = socket.getaddrinfo("0.0.0.0", 80)[0][-1]
 
@@ -42,8 +45,8 @@ def server_session():
     server.listen(2)
     server.settimeout(1.0)
 
-    # Wi-Fi is already connected at this point,
-    # so the address is valid now.
+    # Wi-Fi is connected here, so the assigned address
+    # can now be safely displayed.
     print(
         "HVAC page: http://{}/".format(
             wlan.ifconfig()[0]
@@ -54,8 +57,8 @@ def server_session():
         while True:
             client = None
 
-            # Accept is handled separately because its normal
-            # 1-second timeout raises OSError.
+            # Handle accept() separately because the normal
+            # one-second socket timeout raises OSError.
             try:
                 client, _ = server.accept()
 
@@ -67,21 +70,27 @@ def server_session():
 
                 request = client.recv(1024).decode()
 
-                parse_request(request)
+                request_path = get_request_path(request)
 
-                body = page()
-                body_bytes = body.encode()
+                if request_path.startswith("/download?"):
+                    send_log_file(client, request_path)
 
-                header = (
-                    "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/html; charset=utf-8\r\n"
-                    "Content-Length: {}\r\n"
-                    "Connection: close\r\n"
-                    "\r\n"
-                ).format(len(body_bytes))
+                else:
+                    parse_request(request)
 
-                client.sendall(header.encode())
-                client.sendall(body_bytes)
+                    body = page()
+                    body_bytes = body.encode()
+
+                    header = (
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/html; charset=utf-8\r\n"
+                        "Content-Length: {}\r\n"
+                        "Connection: close\r\n"
+                        "\r\n"
+                    ).format(len(body_bytes))
+
+                    client.sendall(header.encode())
+                    client.sendall(body_bytes)
 
             except Exception as error:
                 logger.log("Web Client", error)
@@ -144,8 +153,16 @@ def page():
             packed_state)
     )
 
-    # Controller temperatures are stored internally in C.
-    # Convert only for webpage display.
+    log_files = get_log_files()
+    log_options = ""
+
+    for filename in log_files:
+        log_options += (
+            '<option value="{}">{}</option>'
+        ).format(filename, filename)
+
+    # Controller temperatures are stored internally in Celsius.
+    # Convert values only when preparing the webpage display.
     if temp_type == "F":
         air_display = round(
             (air_temp * 9 / 5) + 32,
@@ -408,6 +425,32 @@ def page():
         }
     </script>
 
+    <div class="controls">
+        <h2>Logs</h2>
+
+        <form action="/download" method="GET">
+
+            <label for="logfile">
+                Select Log:
+            </label>
+
+            <select
+                name="file"
+                id="logfile"
+            >
+                %s
+            </select>
+
+            <br><br>
+
+            <input
+                type="submit"
+                value="Download Log"
+            >
+
+        </form>
+    </div>
+
 </body>
 </html>
 """ % (
@@ -437,7 +480,9 @@ def page():
         min_temp,
         max_temp,
 
-        temp_type
+        temp_type,
+
+        log_options
     )
 
     return html
@@ -445,39 +490,20 @@ def page():
 
 def parse_request(request):
     try:
-        first_line = request.split("\r\n")[0]
+        path = get_request_path(request)
 
-        parts = first_line.split(" ")
-
-        if len(parts) < 2:
+        if not path:
             return
 
-        method = parts[0]
-        path = parts[1]
-
-        if method != "GET":
-            return
-
-        # Plain GET / is just requesting the page.
+        # A plain GET / request only needs the current page.
         if "?" not in path:
             return
 
         path, query = path.split("?", 1)
 
-        params = {}
+        params = parse_query(query)
 
-        for pair in query.split("&"):
-            if "=" not in pair:
-                continue
-
-            key, value = pair.split("=", 1)
-
-            key = url_decode(key)
-            value = url_decode(value)
-
-            params[key] = value
-
-        # A control request must contain all three values.
+        # Control requests must include mode, temperature, and unit.
         if (
             "mode" not in params
             or "temp" not in params
@@ -498,7 +524,7 @@ def parse_request(request):
             )
             return
 
-        # NaN does not compare normally against min/max,
+        # NaN does not behave normally in range comparisons,
         # so reject it explicitly.
         if temp != temp:
             logger.log(
@@ -551,10 +577,10 @@ def parse_request(request):
                 )
                 return
 
-        # The packed format only needs tenths of a degree.
+        # The packed state stores the setpoint to one decimal place.
         temp = round(temp, 1)
 
-        # Only modify controller state after every
+        # Update shared controller state only after every
         # requested value has passed validation.
         packed_state = (shared_variables.packModeTemp(
                 mode, temp, temp_type
@@ -569,7 +595,7 @@ def parse_request(request):
 
 
 def url_decode(value):
-    # HTML forms normally encode spaces as +
+    # HTML form encoding commonly represents spaces with +
     value = value.replace("+", " ")
 
     result = ""
@@ -597,3 +623,101 @@ def url_decode(value):
         i += 1
 
     return result
+
+def sync_time():
+    if shared_variables.time_init:
+        return
+
+    try:
+        ntptime.settime()
+
+        with shared_variables.resource_lock:
+            shared_variables.time_init = True
+
+    except Exception as error:
+        logger.log("Time Syne", error)
+
+
+def get_log_files():
+    files = []
+
+    try:
+        for filename in os.listdir():
+            if filename.endswith(".txt"):
+                files.append(filename)
+        files.sort()
+
+    except Exception as error:
+        logger.log("Get Log Files", error)
+
+    return files
+
+
+def parse_query(query):
+    params = {}
+
+    for pair in query.split("&"):
+        if "=" not in pair:
+            continue
+
+        key, value = pair.split("=", 1)
+
+        key = url_decode(key)
+        value = url_decode(value)
+
+        params[key] = value
+
+    return params
+
+
+def get_request_path(request):
+    first_line = request.split("\r\n")[0]
+
+    parts = first_line.split(" ")
+
+    if len(parts) < 2:
+        return ""
+
+    return parts[1]
+
+def send_log_file(client, request_path):
+    try:
+        if "?" not in request_path:
+            return
+
+        path, query = request_path.split("?", 1)
+
+        params = parse_query(query)
+
+        if "file" not in params:
+            return
+
+        filename = params["file"]
+
+        if filename not in get_log_files():
+            return
+
+        file_size = os.stat(filename)[6]
+
+        header = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain; charset=utf-8\r\n"
+            "Content-Disposition: attachment; filename=\"{}\"\r\n"
+            "Content-Length: {}\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).format(
+            filename,
+            file_size
+        )
+
+        client.sendall(header.encode())
+        with open(filename, "rb") as file:
+            while True:
+                chunk = file.read(512)
+                if not chunk:
+                    break
+                client.sendall(chunk)
+
+    except Exception as error:
+        logger.log("Download log Failure", error)

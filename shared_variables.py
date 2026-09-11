@@ -1,16 +1,14 @@
 import _thread
+import time
 from errorlog import logger
 
 resource_lock = _thread.allocate_lock()
 
-
-# # shared wifi variables
-# wifi_connected = False
-# restart_wifi = False
+time_init = False
 
 emergency_state = False
 
-modeTempType = 1150
+modeTempType = 1050
 modes = ["off", "fan low", "fan high",
          "cool low", "cool high",
          #"heat low", "heat high",
@@ -24,25 +22,25 @@ outdoor_coil = 0
 current_temps = [air_temp, indoor_coil, outdoor_coil]
 
 def packModeTemp(mode, temp, type):
-    m = 100 #defaul fan on low
-    t = 50 # defualt temp mid range
-    d = 1000 #defualt to F
-    base = 65 #defualt temp base for F
+    m = 100  # Default mode: fan low
+    t = 50  # Default temperature offset: midpoint of range
+    d = 1000  # Default temperature unit: Fahrenheit
+    base = 65  # Fahrenheit setpoint base
     factor = 0.2
 
-    # check Degree type
+    # Select packing values for the requested temperature unit
     if type == "C":
         d = 0
         base = 18.5
         factor = 0.1
 
-    # check mode type
+    # Encode the requested operating mode
     try:
         m = modes.index(mode)*100
     except ValueError:
         logger.log("Shared Variables", "assign mode packing error")
 
-    # convert temp setting into gradient
+    # Encode the setpoint as an offset from the unit-specific base
     temp = round(temp, 1)
     t = int((temp - base)/factor)
 
@@ -58,7 +56,7 @@ def unpackModeTemp(num):
         logger.log("Shared Variables", "unpack decode error")
         raise ValueError("unpack decode error")
 
-    # get C or F setting
+    # Decode the temperature unit
     d = num // 1000
     num = num % 1000
     if d:
@@ -66,7 +64,7 @@ def unpackModeTemp(num):
     else:
         type = "C"
 
-    # get mode
+    # Decode the operating mode
     m = num // 100
     num = num % 100
     try:
@@ -75,7 +73,7 @@ def unpackModeTemp(num):
         logger.log("Shared Variales", "mode decode error")
         raise ValueError("invalid mode value")
 
-    # get temp
+    # Decode the temperature setpoint
     t = num
     if d:
         temp = 65 + (t * 0.2)

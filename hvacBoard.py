@@ -4,6 +4,7 @@ import time
 
 import config
 from errorlog import logger
+from complogger import comp_logger
 import shared_variables
 from thermistor import Thermistor
 
@@ -36,7 +37,7 @@ class HVACController:
         self.fan_high = Pin(config.HIGH_FAN_RELAY, Pin.OUT, value = 0)
         self.reverse_valve = Pin(config.REVERSING_VALVE_RELAY, Pin.OUT, value = 0)
         self.compressor = Pin(config.COMPRESSOR_RELAY, Pin.OUT, value = 0)
-        # Not connecting eletric heating on first runs, testing AC first
+        # Electric heat is intentionally disabled while AC control is being tested
         #self.heat1 = Pin(config.ELECTRIC_HEAT_RELAY, Pin.OUT, value = 0)
         #self.heat2 = Pin(config.ELECTRIC_HEAT_RELAY2, Pin.OUT, value = 0)
 
@@ -71,6 +72,13 @@ class HVACController:
                 self.emergency_off()
                 shared_variables.emergency_state = True
                 logger.log("Thermistor Check","Emergency high Temp")
+                comp_logger.log("OFF",
+                    time.ticks_diff(self.compressor_stop_ms,
+                            self.compressor_start_ms),
+                    shared_variables.current_temps[0],
+                    shared_variables.current_temps[1],
+                    shared_variables.current_temps[2]
+                )
 
         if config.INDOOR_COIL_HIGH < shared_variables.current_temps[1]:
             self.thermal_state = True
@@ -85,7 +93,7 @@ class HVACController:
             self.thermal_state = True
             self.thermal_delay_start_ms = time.ticks_ms()
 
-        # Thermal state recovery logic
+        # Thermal-protection recovery logic
         if self.thermal_state:
             if self.compressor.value():
                 self.comp_state_chg("OFF")
@@ -96,7 +104,8 @@ class HVACController:
                 and config.OUTDOOR_COIL_LOW < shared_variables.current_temps[2]):
                 if self.thermal_delay_start_ms == 0:
                     logger.log("Thermal State Recovery", 
-                               "in thermal state with no start time. Recovering by assigning time")
+                               "in thermal state with no start time. "
+                               "Recovering by assigning time")
                     self.thermal_delay_start_ms = time.ticks_ms()
                 
                 if (time.ticks_diff(time.ticks_ms(), self.thermal_delay_start_ms) 
@@ -154,6 +163,15 @@ class HVACController:
             if self.compressor.value():
                 self.compressor.value(0)
                 self.compressor_stop_ms = time.ticks_ms()
+                # Log how long the compressor remained ON
+                comp_logger.log("OFF",
+                    time.ticks_diff(self.compressor_stop_ms,
+                            self.compressor_start_ms),
+                    shared_variables.current_temps[0],
+                    shared_variables.current_temps[1],
+                    shared_variables.current_temps[2]
+                )
+                
                 self.comp_delay_state = True
             else:
                 return True
@@ -163,11 +181,19 @@ class HVACController:
             if not self.fan_state():
                 self.comp_delay_state = True
                 return False
-            # extra safety check
+
+            # Final safety gate before allowing compressor startup
             if self.comp_delay_state or self.thermal_state:
                 if self.compressor.value():
                     self.compressor.value(0)
                     self.compressor_stop_ms = time.ticks_ms()
+                    comp_logger.log("OFF",
+                        time.ticks_diff(self.compressor_start_ms,
+                                self.compressor_stop_ms),
+                        shared_variables.current_temps[0],
+                        shared_variables.current_temps[1],
+                        shared_variables.current_temps[2]
+                    )
             if self.comp_delay_state:
                 if self.fan_start_ms == 0:
                     self.fan_state_chg("HIGH")
@@ -180,9 +206,17 @@ class HVACController:
             if (not self.comp_delay_state and not self.thermal_state):
                     self.compressor.value(1)
                     self.compressor_start_ms = time.ticks_ms()
+                    # Log how long the compressor remained OFF
+                    comp_logger.log("ON",
+                        time.ticks_diff(self.compressor_start_ms,
+                                self.compressor_stop_ms),
+                        shared_variables.current_temps[0],
+                        shared_variables.current_temps[1],
+                        shared_variables.current_temps[2]
+                    )
                     return True
 
-    # function returns true if either of the fan states are on
+    # Return True when either fan-speed output is active
     def fan_state(self):
         if self.fan_high.value() or self.fan_low.value():
             return True
@@ -195,7 +229,7 @@ class HVACController:
         if req == "LOW":
             if self.fan_high.value():
                 self.fan_high.value(0)
-                time.sleep_ms(100) # allow the relay to switch off my switch is 20ms response
+                time.sleep_ms(100)  # Allow the previous relay to release before switching speeds
                 
             if not self.fan_low.value():
                 if not was_running:
@@ -206,7 +240,7 @@ class HVACController:
         elif req == "HIGH":
             if self.fan_low.value():
                 self.fan_low.value(0)
-                time.sleep_ms(100) # allow the relay to switch off my switch is 20ms response
+                time.sleep_ms(100)  # Allow the previous relay to release before switching speeds
                 
             if not self.fan_high.value():
                 if not was_running:
