@@ -287,12 +287,6 @@ Also verify:
 * Thermal recovery delay
 * Reversing-valve delay reserved for future heat-pump operation
 
-### Wi-Fi Credentials
-
-Do **not** publish real Wi-Fi credentials in a public repository.
-
-Before pushing this project, a fork, or an archive to a public service such as GitHub, replace any local SSID/password values with placeholders or move credentials into a separate untracked secrets/configuration file.
-
 ---
 
 ## Running
